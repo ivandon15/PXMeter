@@ -16,6 +16,9 @@ import json
 import logging
 import os
 import subprocess as sp
+import gzip
+import urllib.request
+import shutil
 from pathlib import Path
 
 import gemmi
@@ -25,34 +28,48 @@ logging.basicConfig(level=logging.INFO)
 
 def download_ccd_cif(output_path: Path):
     """
-    Download the CCD CIF file from rcsb.org.
+    Download the CCD CIF file from rcsb.org using pure Python.
 
     Args:
         output_path (Path): The output path for saving the downloaded CCD CIF file.
     """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.mkdir(parents=True, exist_ok=True)
 
     logging.info("Downloading CCD CIF file from rcsb.org ...")
 
     output_cif_gz = output_path / "components.cif.gz"
+    output_cif = output_path / "components.cif"
+
     if output_cif_gz.exists():
         logging.info("Remove old zipped CCD CIF file: %s", output_cif_gz)
         output_cif_gz.unlink()
 
-    output_cif = output_cif_gz.with_suffix("")
     if output_cif.exists():
         logging.info("Remove old CCD CIF file: %s", output_cif)
         output_cif.unlink()
 
-    sp.run(
-        f"wget https://files.wwpdb.org/pub/pdb/data/monomers/components.cif.gz -P {output_path}",
-        shell=True,
-        check=True,
-    )
+    url = "https://files.wwpdb.org/pub/pdb/data/monomers/components.cif.gz"
 
-    sp.run(f"gunzip -d {output_cif_gz}", shell=True, check=True)
+    logging.info("Starting download: %s", url)
 
-    logging.info("Download CCD CIF file successfully: %s", output_cif)
+    def _progress(block_num, block_size, total_size):
+        downloaded = block_num * block_size
+        percent = min(100, downloaded / total_size * 100) if total_size > 0 else 0
+        print(
+            f"\rDownloading: {percent:.2f}% ({downloaded // 1024} KB / {total_size // 1024 if total_size>0 else 0} KB)",
+            end="",
+        )
+
+    urllib.request.urlretrieve(url, output_cif_gz, _progress)
+    print()
+
+    logging.info("Download complete, unzipping ...")
+
+    with gzip.open(output_cif_gz, "rb") as f_in:
+        with open(output_cif, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+
+    logging.info("CCD CIF file ready: %s", output_cif)
 
 
 def make_precomputed_json_from_ccd(
